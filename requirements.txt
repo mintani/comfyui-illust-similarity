@@ -1,0 +1,9 @@
+# torch and torchvision come from ComfyUI itself.
+dghs-imgutils>=0.19
+# CCIP and WD14 run on onnxruntime; swap in onnxruntime-gpu for the GPU.
+onnxruntime
+dreamsim>=0.2
+open_clip_torch>=2.31
+transformers>=4.45
+numpy
+pillow

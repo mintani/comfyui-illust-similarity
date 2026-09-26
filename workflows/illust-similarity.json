@@ -1,0 +1,28 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "__INPUT_IMAGE__", "upload": "image" },
+    "_meta": { "title": "Image A" }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "__INPUT_IMAGE_2__", "upload": "image" },
+    "_meta": { "title": "Image B" }
+  },
+  "3": {
+    "class_type": "IllustSimilarityAll",
+    "inputs": {
+      "image_a": ["1", 0],
+      "image_b": ["2", 0],
+      "wd14_model": "SwinV2_v3",
+      "dinov2_model": "facebook/dinov2-small",
+      "use_ccip": true,
+      "use_wd14": true,
+      "use_dreamsim": true,
+      "use_siglip2": true,
+      "use_dinov2": true,
+      "use_depth": true
+    },
+    "_meta": { "title": "similarity" }
+  }
+}

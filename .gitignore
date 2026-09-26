@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+.claude
+.DS_Store
+tests/.out/

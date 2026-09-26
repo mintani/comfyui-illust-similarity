@@ -1,0 +1,21 @@
+[project]
+name = "comfyui-illust-similarity"
+description = "How alike two illustrations are: CCIP, WD14, DreamSim, SigLIP 2, DINOv2 and depth, scored 0-100 on the local GPU."
+version = "0.1.0"
+license = { file = "LICENSE" }
+dependencies = [
+  "dghs-imgutils>=0.19",
+  "onnxruntime",
+  "dreamsim>=0.2",
+  "open_clip_torch>=2.31",
+  "transformers>=4.45",
+  "numpy",
+  "pillow",
+]
+
+[project.urls]
+Repository = "https://github.com/mintani/comfyui-illust-similarity"
+
+[tool.comfy]
+PublisherId = "mintani"
+DisplayName = "Illust Similarity"

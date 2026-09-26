@@ -1,0 +1,59 @@
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "__INPUT_IMAGE__", "upload": "image" },
+    "_meta": { "title": "Image A" }
+  },
+  "2": {
+    "class_type": "LoadImage",
+    "inputs": { "image": "__INPUT_IMAGE_2__", "upload": "image" },
+    "_meta": { "title": "Image B" }
+  },
+  "10": {
+    "class_type": "IllustSimilarityCCIP",
+    "inputs": { "image_a": ["1", 0], "image_b": ["2", 0] },
+    "_meta": { "title": "ccip" }
+  },
+  "11": {
+    "class_type": "IllustSimilarityWD14",
+    "inputs": { "image_a": ["1", 0], "image_b": ["2", 0], "model": "SwinV2_v3" },
+    "_meta": { "title": "wd14" }
+  },
+  "12": {
+    "class_type": "IllustSimilarityDreamSim",
+    "inputs": { "image_a": ["1", 0], "image_b": ["2", 0] },
+    "_meta": { "title": "dreamsim" }
+  },
+  "13": {
+    "class_type": "IllustSimilaritySigLIP2",
+    "inputs": { "image_a": ["1", 0], "image_b": ["2", 0] },
+    "_meta": { "title": "siglip2" }
+  },
+  "14": {
+    "class_type": "IllustSimilarityDINOv2",
+    "inputs": { "image_a": ["1", 0], "image_b": ["2", 0], "model": "facebook/dinov2-small" },
+    "_meta": { "title": "dinov2" }
+  },
+  "15": {
+    "class_type": "IllustSimilarityDepth",
+    "inputs": { "image_a": ["1", 0], "image_b": ["2", 0] },
+    "_meta": { "title": "depth" }
+  },
+  "20": {
+    "class_type": "IllustSimilarityReport",
+    "inputs": {
+      "ccip": ["10", 0],
+      "wd14": ["11", 0],
+      "dreamsim": ["12", 0],
+      "siglip2": ["13", 0],
+      "dinov2": ["14", 0],
+      "depth": ["15", 0]
+    },
+    "_meta": { "title": "similarity" }
+  },
+  "21": {
+    "class_type": "PreviewAny",
+    "inputs": { "source": ["11", 5] },
+    "_meta": { "title": "wd14 tags" }
+  }
+}
