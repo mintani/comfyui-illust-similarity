@@ -1,17 +1,16 @@
 """Similarity metrics between two illustrations, on the local GPU.
 
-Six measures, each turned into a 0-100 score, and a weighted total:
+Five measures, each turned into a 0-100 score, and a weighted total:
 
 - CCIP      character identity (deepghs/imgutils, ONNX)
-- WD14      tag-embedding similarity (WD SwinV2 tagger v3, ONNX)
-- DreamSim  perceptual similarity (CLIP + DINO + OpenCLIP ensemble)
+- PixAI     tag-embedding similarity (PixAI Tagger v1.0)
 - SigLIP 2  semantic similarity (OpenCLIP ViT-B-16-SigLIP2-256)
 - DINOv2    self-supervised visual features (facebook/dinov2-small, CLS)
 - Depth     composition: correlation of Depth Anything V2 depth maps
 
 Nothing here talks to a remote inference API. Every model is downloaded once
 into the cache directory and run locally; the torch models on the device
-ComfyUI picks, the ONNX models through onnxruntime.
+ComfyUI picks, the CCIP model through onnxruntime.
 
 The raw-value-to-score mapping and its anchors are ported from
 Tesixki/anime-illust-similarity (MIT): a piecewise-linear map through the
@@ -38,33 +37,33 @@ CATEGORY_SCORE = (0.0, 30.0, 70.0, 100.0)
 CALIBRATION: dict[str, dict[str, Any]] = {
     "siglip2": {"kind": "cosine", "anchors": (0.566, 0.800, 0.904, 0.988)},
     "dinov2": {"kind": "cosine", "anchors": (0.306, 0.546, 0.620, 0.977)},
-    "dreamsim": {"kind": "distance", "anchors": (0.758, 0.532, 0.314, 0.023)},
     # CCIP tells "different character" from "unrelated" poorly, so the 0 anchor
     # is the 95th percentile of different-character pairs. The model's own
     # threshold (0.178) lands near 54 on this scale.
     "ccip": {"kind": "distance", "anchors": (0.461, 0.327, 0.074, 0.004)},
-    "wd14": {"kind": "cosine", "anchors": (0.451, 0.530, 0.748, 0.991)},
+    "pixai": {"kind": "cosine", "anchors": (0.282, 0.508, 0.742, 0.978)},
     "depth": {"kind": "cosine", "anchors": (0.285, 0.451, 0.805, 0.999)},
 }
 
 WEIGHTS = {
-    "ccip": 0.25,
-    "wd14": 0.10,
-    "siglip2": 0.10,
-    "dreamsim": 0.10,
-    "dinov2": 0.05,
+    "ccip": 0.35,
+    "pixai": 0.25,
+    "siglip2": 0.20,
+    "dinov2": 0.10,
     "depth": 0.10,
 }
 
-METRIC_KEYS = ("ccip", "wd14", "dreamsim", "siglip2", "dinov2", "depth")
+METRIC_KEYS = ("ccip", "pixai", "siglip2", "dinov2", "depth")
 
-WD14_MODELS = ("SwinV2_v3", "ConvNext_v3", "ViT_v3", "EVA02_Large")
+# The model's code runs from its repository, so the revision pins what runs.
+PIXAI_MODEL = "pixai-labs/pixai-tagger-v1.0"
+PIXAI_REVISION = "9fe10addf9326e292da8a85a98ea74cd91b41771"
 DINOV2_MODELS = ("facebook/dinov2-small", "facebook/dinov2-base")
 SIGLIP2_MODEL = ("ViT-B-16-SigLIP2-256", "webli")
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_GRID = 64
 
-# WD14 tags that say a person is in the picture, and that more than one is.
+# Danbooru tags that say a person is in the picture, and that more than one is.
 PERSON_TAGS = frozenset({"1girl", "1boy", "1other", "solo", "2girls", "2boys", "multiple_girls",
                          "multiple_boys", "3girls", "3boys", "4girls", "4boys", "5girls", "6+girls",
                          "6+boys", "2others", "3others", "multiple_others"})
@@ -162,25 +161,44 @@ def ccip(a: Image.Image, b: Image.Image) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# WD14 tagger — tag embedding and shared tags
+# PixAI Tagger — tag-head embedding and shared tags
 # ---------------------------------------------------------------------------
 
 
-def wd14_tags(image: Image.Image, model_name: str = "SwinV2_v3") -> dict[str, Any]:
-    from imgutils.tagging import get_wd14_tags
+def _pixai():
+    import torch
+    from transformers import AutoImageProcessor, AutoModel
 
-    general, character, embedding = get_wd14_tags(
-        image, model_name=model_name, fmt=("general", "character", "embedding")
-    )
-    return {
-        "embedding": np.asarray(embedding, dtype=np.float32),
-        "general": dict(general),
-        "character": dict(character),
-    }
+    options = {"revision": PIXAI_REVISION, "trust_remote_code": True, "cache_dir": _hf_cache()}
+    processor = AutoImageProcessor.from_pretrained(PIXAI_MODEL, **options)
+    model = AutoModel.from_pretrained(PIXAI_MODEL, **options)
+    model.eval().to(settings.device)
+    # The tag list is the concatenation of the categories, in this order.
+    spans, start = {}, 0
+    for category, count in model.config.tags_split:
+        spans[category] = (start, start + count, float(model.config.category_best_threshold[category]))
+        start += count
+    return model, processor, torch, list(model.config.tags), spans
 
 
-def wd14(a: Image.Image, b: Image.Image, model_name: str = "SwinV2_v3") -> dict[str, Any]:
-    ta, tb = wd14_tags(a, model_name), wd14_tags(b, model_name)
+def pixai_tags(image: Image.Image) -> dict[str, Any]:
+    """The input of the tag head (the embedding) and the tags over the model's thresholds."""
+    model, processor, torch, tags, spans = _cached("pixai", _pixai)
+    with torch.no_grad():
+        pixels = processor(image, return_tensors="pt")["pixel_values"].to(settings.device, model.dtype)
+        features = model.forward_feature(pixels)[-1]  # [1, C, h, w]
+        pooled = model.head_pool(features.view(features.shape[0], features.shape[1], -1).permute(0, 2, 1))
+        probs = torch.sigmoid(model.head(pooled))[0].float().cpu().numpy()
+    result: dict[str, Any] = {"embedding": pooled[0].float().cpu().numpy()}
+    for category in ("general", "character"):
+        first, last, threshold = spans[category]
+        picked = np.nonzero(probs[first:last] > threshold)[0]
+        result[category] = {tags[first + i]: float(probs[first + i]) for i in picked}
+    return result
+
+
+def pixai(a: Image.Image, b: Image.Image) -> dict[str, Any]:
+    ta, tb = pixai_tags(a), pixai_tags(b)
     cos = cosine(ta["embedding"], tb["embedding"])
     tags_a = set(ta["general"]) | set(ta["character"])
     tags_b = set(tb["general"]) | set(tb["character"])
@@ -190,8 +208,7 @@ def wd14(a: Image.Image, b: Image.Image, model_name: str = "SwinV2_v3") -> dict[
     )
     return {
         "raw": cos,
-        "score": piecewise_score(cos, "wd14"),
-        "model": model_name,
+        "score": piecewise_score(cos, "pixai"),
         "tags_a": sorted(tags_a),
         "tags_b": sorted(tags_b),
         "character_a": sorted(ta["character"]),
@@ -208,51 +225,6 @@ def wd14(a: Image.Image, b: Image.Image, model_name: str = "SwinV2_v3") -> dict[
 def _has_humans(general: dict[str, float]) -> bool:
     tags = set(general)
     return not ("no_humans" in tags and not (tags & PERSON_TAGS))
-
-
-# ---------------------------------------------------------------------------
-# DreamSim — perceptual distance, 1 - cos of the ensemble embedding
-# ---------------------------------------------------------------------------
-
-
-def _dreamsim():
-    import sys
-
-    import torch
-    from dreamsim import dreamsim as load
-
-    cache = os.path.join(settings.cache_root, "dreamsim")
-    os.makedirs(cache, exist_ok=True)
-
-    # DreamSim fetches facebookresearch/dino through torch.hub, and that code
-    # does `from utils import trunc_normal_` — a top-level `utils` that
-    # ComfyUI's own `utils` package shadows once ComfyUI has imported it. Take
-    # ComfyUI's out of sys.modules while the hub loads, so the name resolves
-    # from the hub's directory (which torch.hub puts first on sys.path), then
-    # put ComfyUI's back.
-    shadowed = {name: module for name, module in sys.modules.items()
-                if name == "utils" or name.startswith("utils.")}
-    for name in shadowed:
-        del sys.modules[name]
-    try:
-        model, preprocess = load(pretrained=True, device=settings.device, cache_dir=cache)
-    finally:
-        for name in [n for n in sys.modules if n == "utils" or n.startswith("utils.")]:
-            del sys.modules[name]
-        sys.modules.update(shadowed)
-    model.eval()
-    return model, preprocess, torch
-
-
-def dreamsim_embed(image: Image.Image) -> np.ndarray:
-    model, preprocess, torch = _cached("dreamsim", _dreamsim)
-    with torch.no_grad():
-        return model.embed(preprocess(image).to(settings.device))[0].float().cpu().numpy()
-
-
-def dreamsim(a: Image.Image, b: Image.Image) -> dict[str, Any]:
-    distance = 1.0 - cosine(dreamsim_embed(a), dreamsim_embed(b))
-    return {"raw": distance, "score": piecewise_score(distance, "dreamsim")}
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +357,6 @@ def total_score(scores: dict[str, float]) -> float | None:
 def compute_all(
     a: Image.Image,
     b: Image.Image,
-    wd14_model: str = "SwinV2_v3",
     dinov2_model: str = DINOV2_MODELS[0],
     enabled: tuple[str, ...] = METRIC_KEYS,
 ) -> dict[str, Any]:
@@ -393,8 +364,7 @@ def compute_all(
     results: dict[str, Any] = {}
     runners: dict[str, Callable[[], dict[str, Any]]] = {
         "ccip": lambda: ccip(a, b),
-        "wd14": lambda: wd14(a, b, wd14_model),
-        "dreamsim": lambda: dreamsim(a, b),
+        "pixai": lambda: pixai(a, b),
         "siglip2": lambda: siglip2(a, b),
         "dinov2": lambda: dinov2(a, b, dinov2_model),
         "depth": lambda: depth(a, b),
@@ -408,7 +378,7 @@ def compute_all(
             results[key] = {"error": f"{type(err).__name__}: {err}"}
 
     # CCIP assumes a single character; a landscape gets no character score.
-    tags = results.get("wd14", {})
+    tags = results.get("pixai", {})
     if "score" in results.get("ccip", {}) and "score" in tags:
         if not (tags["humans_a"] and tags["humans_b"]):
             results["ccip"] = {"skipped": "no person in one of the images", "raw": results["ccip"]["raw"]}

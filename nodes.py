@@ -1,7 +1,7 @@
 """The ComfyUI nodes: thin wrappers around `metrics`.
 
 Every node takes two IMAGE inputs and returns the metric's 0-100 score, its
-raw value and a JSON string. `Illust Similarity (All)` runs the six at once
+raw value and a JSON string. `Illust Similarity (All)` runs the five at once
 and is an output node, so the JSON lands in the run's history — which is how
 a job server reads it back.
 """
@@ -76,21 +76,19 @@ class IllustSimilarityCCIP:
         return (result["score"], result["raw"], result["same_character"], metrics.to_json(result))
 
 
-class IllustSimilarityWD14:
+class IllustSimilarityPixAI:
     @classmethod
     def INPUT_TYPES(cls):
-        spec = pair()
-        spec["required"]["model"] = (list(metrics.WD14_MODELS), {"default": "SwinV2_v3"})
-        return spec
+        return pair()
 
     RETURN_TYPES = ("FLOAT", "FLOAT", "STRING", "STRING", "STRING", "STRING")
     RETURN_NAMES = ("score", "cosine", "tags_a", "tags_b", "shared_tags", "json")
     FUNCTION = "run"
     CATEGORY = CATEGORY
-    DESCRIPTION = "Tag-embedding similarity from a WD14 tagger, with the tags themselves."
+    DESCRIPTION = "Tag-embedding similarity from PixAI Tagger v1.0, with the tags themselves."
 
-    def run(self, image_a, image_b, model):
-        result = metrics.wd14(to_pil(image_a), to_pil(image_b), model)
+    def run(self, image_a, image_b):
+        result = metrics.pixai(to_pil(image_a), to_pil(image_b))
         return (
             result["score"],
             result["raw"],
@@ -99,22 +97,6 @@ class IllustSimilarityWD14:
             ", ".join(result["shared_tags"]),
             metrics.to_json(result),
         )
-
-
-class IllustSimilarityDreamSim:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return pair()
-
-    RETURN_TYPES = ("FLOAT", "FLOAT", "STRING")
-    RETURN_NAMES = ("score", "distance", "json")
-    FUNCTION = "run"
-    CATEGORY = CATEGORY
-    DESCRIPTION = "Perceptual distance (DreamSim ensemble). 0 is identical."
-
-    def run(self, image_a, image_b):
-        result = metrics.dreamsim(to_pil(image_a), to_pil(image_b))
-        return (result["score"], result["raw"], metrics.to_json(result))
 
 
 class IllustSimilaritySigLIP2:
@@ -197,12 +179,11 @@ class IllustSimilarityReport:
 
 
 class IllustSimilarityAll:
-    """All six metrics in one node, as the job-server workflow uses it."""
+    """All five metrics in one node, as the job-server workflow uses it."""
 
     @classmethod
     def INPUT_TYPES(cls):
         spec = pair()
-        spec["required"]["wd14_model"] = (list(metrics.WD14_MODELS), {"default": "SwinV2_v3"})
         spec["required"]["dinov2_model"] = (list(metrics.DINOV2_MODELS), {"default": metrics.DINOV2_MODELS[0]})
         for key in metrics.METRIC_KEYS:
             spec["required"][f"use_{key}"] = ("BOOLEAN", {"default": True})
@@ -215,9 +196,9 @@ class IllustSimilarityAll:
     OUTPUT_NODE = True
     DESCRIPTION = "Every metric at once. The JSON (per-metric raw value, score, tags, total) is recorded in the run's history."
 
-    def run(self, image_a, image_b, wd14_model, dinov2_model, **flags):
+    def run(self, image_a, image_b, dinov2_model, **flags):
         enabled = tuple(key for key in metrics.METRIC_KEYS if flags.get(f"use_{key}", True))
-        results = metrics.compute_all(to_pil(image_a), to_pil(image_b), wd14_model, dinov2_model, enabled)
+        results = metrics.compute_all(to_pil(image_a), to_pil(image_b), dinov2_model, enabled)
         maps = results.get("depth", {}).get("_maps")
         blank = torch.zeros((1, 8, 8, 3))
         depth_a = to_image(maps[0]) if maps else blank
@@ -230,8 +211,7 @@ class IllustSimilarityAll:
 NODE_CLASS_MAPPINGS = {
     "IllustSimilarityAll": IllustSimilarityAll,
     "IllustSimilarityCCIP": IllustSimilarityCCIP,
-    "IllustSimilarityWD14": IllustSimilarityWD14,
-    "IllustSimilarityDreamSim": IllustSimilarityDreamSim,
+    "IllustSimilarityPixAI": IllustSimilarityPixAI,
     "IllustSimilaritySigLIP2": IllustSimilaritySigLIP2,
     "IllustSimilarityDINOv2": IllustSimilarityDINOv2,
     "IllustSimilarityDepth": IllustSimilarityDepth,
@@ -241,8 +221,7 @@ NODE_CLASS_MAPPINGS = {
 NODE_DISPLAY_NAME_MAPPINGS = {
     "IllustSimilarityAll": "Illust Similarity (All)",
     "IllustSimilarityCCIP": "Illust Similarity: CCIP",
-    "IllustSimilarityWD14": "Illust Similarity: WD14 tags",
-    "IllustSimilarityDreamSim": "Illust Similarity: DreamSim",
+    "IllustSimilarityPixAI": "Illust Similarity: PixAI tags",
     "IllustSimilaritySigLIP2": "Illust Similarity: SigLIP 2",
     "IllustSimilarityDINOv2": "Illust Similarity: DINOv2",
     "IllustSimilarityDepth": "Illust Similarity: Depth",

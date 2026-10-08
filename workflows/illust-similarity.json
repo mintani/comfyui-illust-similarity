@@ -14,11 +14,9 @@
     "inputs": {
       "image_a": ["1", 0],
       "image_b": ["2", 0],
-      "wd14_model": "SwinV2_v3",
       "dinov2_model": "facebook/dinov2-small",
       "use_ccip": true,
-      "use_wd14": true,
-      "use_dreamsim": true,
+      "use_pixai": true,
       "use_siglip2": true,
       "use_dinov2": true,
       "use_depth": true

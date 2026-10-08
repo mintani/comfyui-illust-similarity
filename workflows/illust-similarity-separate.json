@@ -15,14 +15,9 @@
     "_meta": { "title": "ccip" }
   },
   "11": {
-    "class_type": "IllustSimilarityWD14",
-    "inputs": { "image_a": ["1", 0], "image_b": ["2", 0], "model": "SwinV2_v3" },
-    "_meta": { "title": "wd14" }
-  },
-  "12": {
-    "class_type": "IllustSimilarityDreamSim",
+    "class_type": "IllustSimilarityPixAI",
     "inputs": { "image_a": ["1", 0], "image_b": ["2", 0] },
-    "_meta": { "title": "dreamsim" }
+    "_meta": { "title": "pixai" }
   },
   "13": {
     "class_type": "IllustSimilaritySigLIP2",
@@ -43,8 +38,7 @@
     "class_type": "IllustSimilarityReport",
     "inputs": {
       "ccip": ["10", 0],
-      "wd14": ["11", 0],
-      "dreamsim": ["12", 0],
+      "pixai": ["11", 0],
       "siglip2": ["13", 0],
       "dinov2": ["14", 0],
       "depth": ["15", 0]
@@ -54,6 +48,6 @@
   "21": {
     "class_type": "PreviewAny",
     "inputs": { "source": ["11", 5] },
-    "_meta": { "title": "wd14 tags" }
+    "_meta": { "title": "pixai tags" }
   }
 }
