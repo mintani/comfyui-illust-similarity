@@ -167,11 +167,19 @@ def ccip(a: Image.Image, b: Image.Image) -> dict[str, Any]:
 
 def _pixai():
     import torch
-    from transformers import AutoImageProcessor, AutoModel
+    from huggingface_hub import hf_hub_download
+    from safetensors.torch import load_file
+    from transformers import AutoConfig, AutoImageProcessor, AutoModel
 
     options = {"revision": PIXAI_REVISION, "trust_remote_code": True, "cache_dir": _hf_cache()}
     processor = AutoImageProcessor.from_pretrained(PIXAI_MODEL, **options)
-    model = AutoModel.from_pretrained(PIXAI_MODEL, **options)
+    # `from_pretrained` builds the model on the meta device, and the tagger's
+    # own `__init__` calls `.item()` on a tensor it makes there, which raises.
+    # `from_config` builds on a real device, so load the weights by hand after.
+    config = AutoConfig.from_pretrained(PIXAI_MODEL, **options)
+    model = AutoModel.from_config(config, trust_remote_code=True)
+    weights = hf_hub_download(PIXAI_MODEL, "model.safetensors", revision=PIXAI_REVISION, cache_dir=_hf_cache())
+    model.load_state_dict(load_file(weights))
     model.eval().to(settings.device)
     # The tag list is the concatenation of the categories, in this order.
     spans, start = {}, 0
